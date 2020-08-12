@@ -34,7 +34,7 @@
         "build": "cd android && ./gradlew assembleRelease assembleAndroidTest -DtestBuildType=release && cd ..",
         "type": "android.emulator",
         "device": {
-          "avdName": "Nexus_4_API_23"
+          "avdName": "emulator-5554"
         }
       },
       "android.emu.release": {
