@@ -1,0 +1,175 @@
+---
+format_version: '8'
+default_step_lib_source: https://github.com/bitrise-io/bitrise-steplib.git
+project_type: react-native
+trigger_map:
+- push_branch: "*"
+  workflow: primary
+- pull_request_source_branch: "*"
+  workflow: primary
+workflows:
+  deploy:
+    description: "## Configure Android part of the deploy workflow\n\nTo generate
+      a signed APK:\n\n1. Open the **Workflow** tab of your project on Bitrise.io\n1.
+      Add **Sign APK step right after Android Build step**\n1. Click on **Code Signing**
+      tab\n1. Find the **ANDROID KEYSTORE FILE** section\n1. Click or drop your file
+      on the upload file field\n1. Fill the displayed 3 input fields:\n1. **Keystore
+      password**\n1. **Keystore alias**\n1. **Private key password**\n1. Click on
+      **[Save metadata]** button\n\nThat's it! From now on, **Sign APK** step will
+      receive your uploaded files.\n\n## Configure iOS part of the deploy workflow\n\nTo
+      generate IPA:\n\n1. Open the **Workflow** tab of your project on Bitrise.io\n1.
+      Click on **Code Signing** tab\n1. Find the **PROVISIONING PROFILE** section\n1.
+      Click or drop your file on the upload file field\n1. Find the **CODE SIGNING
+      IDENTITY** section\n1. Click or drop your file on the upload file field\n1.
+      Click on **Workflows** tab\n1. Select deploy workflow\n1. Select **Xcode Archive
+      & Export for iOS** step\n1. Open **Force Build Settings** input group\n1. Specify
+      codesign settings\nSet **Force code signing with Development Team**, **Force
+      code signing with Code Signing Identity**  \nand **Force code signing with Provisioning
+      Profile** inputs regarding to the uploaded codesigning files\n1. Specify manual
+      codesign style\nIf the codesigning files, are generated manually on the Apple
+      Developer Portal,  \nyou need to explicitly specify to use manual coedsign settings
+      \ \n(as ejected rn projects have xcode managed codesigning turned on).  \nTo
+      do so, add 'CODE_SIGN_STYLE=\"Manual\"' to 'Additional options for xcodebuild
+      call' input\n\n## To run this workflow\n\nIf you want to run this workflow manually:\n\n1.
+      Open the app's build list page\n2. Click on **[Start/Schedule a Build]** button\n3.
+      Select **deploy** in **Workflow** dropdown input\n4. Click **[Start Build]**
+      button\n\nOr if you need this workflow to be started by a GIT event:\n\n1. Click
+      on **Triggers** tab\n2. Setup your desired event (push/tag/pull) and select
+      **deploy** workflow\n3. Click on **[Done]** and then **[Save]** buttons\n\nThe
+      next change in your repository that matches any of your trigger map event will
+      start **deploy** workflow.\n"
+    steps:
+    - activate-ssh-key@4:
+        run_if: '{{getenv "SSH_RSA_PRIVATE_KEY" | ne ""}}'
+    - git-clone@4: {}
+    - script@1:
+        title: Do anything with Script step
+    - yarn@0:
+        inputs:
+        - workdir: RnE2eTestingDetox
+        - command: install
+    - install-missing-android-tools@2:
+        inputs:
+        - gradlew_path: "$PROJECT_LOCATION/gradlew"
+    - android-build@0:
+        inputs:
+        - project_location: "$PROJECT_LOCATION"
+    - certificate-and-profile-installer@1: {}
+    - xcode-archive@2:
+        inputs:
+        - project_path: "$BITRISE_PROJECT_PATH"
+        - scheme: "$BITRISE_SCHEME"
+        - export_method: "$BITRISE_EXPORT_METHOD"
+        - configuration: Release
+    - deploy-to-bitrise-io@1: {}
+  primary:
+    steps:
+    - script@1:
+        inputs:
+        - content: |-
+            #!/usr/bin/env bash
+            # fail if any commands fails
+            set -e
+            # debug log
+            set -x
+
+            # write your script here
+            /Users/vagrant/Library/Developer/Xamarin/android-sdk-macosx/tools/bin/sdkmanager "--verbose" "--channel=0" "emulator"
+
+            echo y | /Users/vagrant/Library/Developer/Xamarin/android-sdk-macosx/tools/bin/sdkmanager "--verbose" "system-images;android-26;google_apis;x86"
+
+            /Users/vagrant/Library/Developer/Xamarin/android-sdk-macosx/tools/bin/avdmanager "--verbose" "create" "avd" "--force" "--name" "Nexus_4_API_23" "--device" "pixel" "--package" "system-images;android-26;google_apis;x86" "--tag" "google_apis" "--abi" "x86" "--sdcard" "512M"
+
+            /Users/vagrant/Library/Developer/Xamarin/android-sdk-macosx/emulator/emulator "@Nexus_4_API_23" "-verbose" "-show-kernel" "-no-audio" "-no-boot-anim" "-netdelay" "none" "-no-snapshot" "-wipe-data" "-gpu" "swiftshader_indirect" "-camera-back" "none" "-camera-front" "none" &> /tmp/log.txt &
+
+            # or run a script from your repository, like:
+            # bash ./path/to/script.sh
+            # not just bash, e.g.:
+            # ruby ./path/to/script.rb
+    - activate-ssh-key@4:
+        run_if: '{{getenv "SSH_RSA_PRIVATE_KEY" | ne ""}}'
+    - git-clone@4: {}
+    - yarn@0:
+        inputs:
+        - workdir: RnE2eTestingDetox
+        - command: install
+    - wait-for-android-emulator@1:
+        inputs:
+        - emulator_serial: emulator-5554
+    - script@1:
+        inputs:
+        - content: |-
+            #!/usr/bin/env bash
+            # fail if any commands fails
+            set -e
+            # debug log
+            set -x
+
+            # write your script here
+            cd RnE2eTestingDetox
+            node_modules/.bin/detox run-server &> $BITRISE_DEPLOY_DIR/detox_logs.txt &
+            node_modules/.bin/detox build --configuration android.emu.release
+            node_modules/.bin/detox test --loglevel trace -c android.emu.release --artifacts-location "$BITRISE_DEPLOY_DIR/"
+
+            # or run a script from your repository, like:
+            # bash ./path/to/script.sh
+            # not just bash, e.g.:
+            # ruby ./path/to/script.rb
+    - deploy-to-bitrise-io@1: {}
+  geny-primary:
+    steps:
+    - genymotion-cloud-saas-start@0:
+        inputs:
+        - password: "$genypw"
+        - recipe_uuid: 31f96174-9148-4bd3-84dd-0819681936bf
+        - email: tamas.bazsonyi@bitrise.io
+    - activate-ssh-key@4:
+        run_if: '{{getenv "SSH_RSA_PRIVATE_KEY" | ne ""}}'
+    - git-clone@4: {}
+    - yarn@0:
+        inputs:
+        - workdir: RnE2eTestingDetox
+        - command: install
+    - script@1:
+        inputs:
+        - content: |-
+            #!/usr/bin/env bash
+            # fail if any commands fails
+            set -e
+            # debug log
+            set -x
+
+            # write your script here
+            cd RnE2eTestingDetox
+            node_modules/.bin/detox run-server &> $BITRISE_DEPLOY_DIR/detox_logs.txt &
+            node_modules/.bin/detox build --configuration android.emu.release
+            adb shell settings put global http_proxy localhost:3333
+            adb reverse tcp:3333 tcp:8099
+            node_modules/.bin/detox test --loglevel trace -c android.emu.release --artifacts-location "$BITRISE_DEPLOY_DIR/"
+
+            # or run a script from your repository, like:
+            # bash ./path/to/script.sh
+            # not just bash, e.g.:
+            # ruby ./path/to/script.rb
+    - deploy-to-bitrise-io@1: {}
+    - genymotion-cloud-saas-stop@0: {}
+app:
+  envs:
+  - opts:
+      is_expand: false
+    PROJECT_LOCATION: RnE2eTestingDetox/android
+  - opts:
+      is_expand: false
+    MODULE: app
+  - opts:
+      is_expand: false
+    VARIANT: ''
+  - opts:
+      is_expand: false
+    BITRISE_PROJECT_PATH: RnE2eTestingDetox/ios/RnE2eTestingDetox.xcodeproj
+  - opts:
+      is_expand: false
+    BITRISE_SCHEME: RnE2eTestingDetox
+  - opts:
+      is_expand: false
+    BITRISE_EXPORT_METHOD: development
